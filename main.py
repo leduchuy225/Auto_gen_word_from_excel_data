@@ -2,6 +2,12 @@ import pandas as pd
 from docx import Document
 import os
 from datetime import datetime
+import re
+from num2words import num2words
+
+excel_sheet_name = "M07B"
+excel_file_name = "GQVL.xlsx"
+word_file_name = "Hop_dong_TD.docx"
 
 column_mappings = {
     'stt': 'STT',
@@ -28,18 +34,30 @@ column_mappings = {
     'ngay_bat_dau_tra_goc': 'Ngày bắt đầu trả gốc'
 }
 
+convert_str_field = ['so_can_cuoc', 'dien_thoai', 'dien_thoai_ben_cho_vay']
+
 # Output folder
 output_dir = "generated_docs"
 os.makedirs(output_dir, exist_ok=True)
 
 today = datetime.today()
-current_date = today.strftime("%d/%m/%Y")
+current_date = f"ngày {today.day:02d} tháng {today.month:02d} năm {today.year}"
 
 # Read Excel file (first sheet by default)
-df = pd.read_excel("GQVL.xlsx", sheet_name="M07B",
-                   engine='openpyxl', converters={column_mappings['so_can_cuoc']: str, column_mappings['dien_thoai']: str, column_mappings['dien_thoai_ben_cho_vay']: str})
+df = pd.read_excel(excel_file_name, sheet_name=excel_sheet_name,
+                   engine='openpyxl', converters={column_mappings[field]: str for field in convert_str_field})
 
 print(df.dtypes)
+
+
+def evaluate_placeholder(expr: str):
+  match = re.match(r'{{\s*(\w+)\((\w+)\)\s*}}', expr)
+  if not match:
+    return None
+
+  func_name, arg_name = match.groups()
+
+  return func_name, arg_name
 
 
 def generate_ky_han_tra_no_goc(start_date, end_date, amount):
@@ -69,7 +87,7 @@ def generate_ky_han_tra_no_goc(start_date, end_date, amount):
 # For each row in the Excel file
 for index, row in df.iterrows():
   # Load template
-  doc = Document("Hop_dong_TD.docx")
+  doc = Document(word_file_name)
 
   replacements = {}
 
@@ -89,11 +107,19 @@ for index, row in df.iterrows():
   for paragraph in doc.paragraphs:
     for run in paragraph.runs:
       if f"{{current_date}}" in run.text:
-        run.text = run.text.replace(f"{{current_date}}", str(current_date))
+        run.text = run.text.replace("{{current_date}}", str(current_date))
 
       if f"{{ky_han_tra_no_goc}}" in run.text:
         run.text = run.text.replace("{{ky_han_tra_no_goc}}",
                                     generate_ky_han_tra_no_goc(row[column_mappings['ngay_bat_dau_tra_goc']], row[column_mappings['han_tra_no_cuoi_cung']], row[column_mappings['so_tien_tra_no_goc_cho_moi_ky_han_dong']]))
+
+      # Replace function placeholders
+      func_placeholders = re.findall(r'{{\s*\w+\(\w+\)\s*}}', run.text)
+      for ph in func_placeholders:
+        func_name, arg_name = evaluate_placeholder(ph)
+        if func_name == 'num2words':
+          run.text = run.text.replace(
+              ph, num2words(row[column_mappings[arg_name]], lang='vi').capitalize() + " đồng")
 
       for key, value in replacements.items():
         if key in run.text:
@@ -108,8 +134,10 @@ for index, row in df.iterrows():
               p.text = p.text.replace(key, value)
 
   # Save with a unique name (e.g., by borrower name or row number)
-  borrower = str(row['Họ tên người vay']).replace(" ", "_").replace("/", "_")
-  filename = f"{borrower}_Hợp_đồng_tín_dụng.docx"
+  borrower = str(row[column_mappings['ho_ten_nguoi_vay']]
+                 ).replace(" ", "_").replace("/", "_")
+
+  filename = f"{borrower}.docx"
   doc.save(os.path.join(output_dir, filename))
 
 print("All documents generated successfully.")
