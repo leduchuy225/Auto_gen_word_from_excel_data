@@ -36,7 +36,10 @@ today = datetime.today()
 current_date = today.strftime("%d/%m/%Y")
 
 # Read Excel file (first sheet by default)
-df = pd.read_excel("GQVL.xlsx", sheet_name="M07B", engine='openpyxl')
+df = pd.read_excel("GQVL.xlsx", sheet_name="M07B",
+                   engine='openpyxl', converters={column_mappings['so_can_cuoc']: str, column_mappings['dien_thoai']: str, column_mappings['dien_thoai_ben_cho_vay']: str})
+
+print(df.dtypes)
 
 
 def generate_ky_han_tra_no_goc(start_date, end_date, amount):
@@ -53,7 +56,7 @@ def generate_ky_han_tra_no_goc(start_date, end_date, amount):
   result_lines = []
 
   for date in dates:
-    amount_str = f"{amount:,.0f}".replace(",", ".")  # Format number only
+    amount_str = f"{amount:,.0f}"  # Format number only
     result_lines.append(
         f"\t- Ngày {date.strftime('%d/%m/%Y')}, số tiền {amount_str} đồng.")
 
@@ -83,18 +86,18 @@ for index, row in df.iterrows():
       replacements[f"{{{{{var}}}}}"] = formatted_value
 
   # Replace placeholders in paragraphs
-  for p in doc.paragraphs:
+  for paragraph in doc.paragraphs:
+    for run in paragraph.runs:
+      if f"{{current_date}}" in run.text:
+        run.text = run.text.replace(f"{{current_date}}", str(current_date))
 
-    if f"{{current_date}}" in p.text:
-      p.text = p.text.replace(f"{{current_date}}", str(current_date))
+      if f"{{ky_han_tra_no_goc}}" in run.text:
+        run.text = run.text.replace("{{ky_han_tra_no_goc}}",
+                                    generate_ky_han_tra_no_goc(row[column_mappings['ngay_bat_dau_tra_goc']], row[column_mappings['han_tra_no_cuoi_cung']], row[column_mappings['so_tien_tra_no_goc_cho_moi_ky_han_dong']]))
 
-    if f"{{ky_han_tra_no_goc}}" in p.text:
-      p.text = p.text.replace("{{ky_han_tra_no_goc}}",
-                              generate_ky_han_tra_no_goc(row[column_mappings['ngay_bat_dau_tra_goc']], row[column_mappings['han_tra_no_cuoi_cung']], row[column_mappings['so_tien_tra_no_goc_cho_moi_ky_han_dong']]))
-
-    for key, value in replacements.items():
-      if key in p.text:
-        p.text = p.text.replace(key, value)
+      for key, value in replacements.items():
+        if key in run.text:
+          run.text = run.text.replace(key, value)
 
   for table in doc.tables:
     for row_obj in table.rows:
@@ -106,7 +109,7 @@ for index, row in df.iterrows():
 
   # Save with a unique name (e.g., by borrower name or row number)
   borrower = str(row['Họ tên người vay']).replace(" ", "_").replace("/", "_")
-  filename = f"{index+1}_{borrower}.docx"
+  filename = f"{borrower}_Hợp_đồng_tín_dụng.docx"
   doc.save(os.path.join(output_dir, filename))
 
 print("All documents generated successfully.")
