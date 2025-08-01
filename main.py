@@ -4,38 +4,15 @@ import os
 from datetime import datetime
 import re
 from num2words import num2words
+from dateutil.relativedelta import relativedelta
+from const import (
+    excel_file_name,
+    excel_sheet_name,
+    column_mappings,
+    convert_str_field,
+    word_file_name,
+)
 
-
-excel_sheet_name = "M07B"
-excel_file_name = "GQVL.xlsx"
-word_file_name = "Hop_dong_TD.docx"
-
-column_mappings = {
-    "stt": "STT",
-    "hop_dong_tin_dung_so": "Hợp đồng tín dụng số",
-    "ten_ben_cho_vay": "Tên bên cho vay",
-    "dia_chi_ben_cho_vay": "Địa chỉ bên cho vay",
-    "dien_thoai_ben_cho_vay": "Điện thoại bên cho vay",
-    "ho_va_ten_nguoi_dai_dien": "Họ và tên người đại diện",
-    "chuc_vu": "Chức vụ",
-    "ho_ten_nguoi_vay": "Họ tên người vay",
-    "nam_sinh": "Năm sinh",
-    "tuoi": "Tuổi",
-    "so_can_cuoc": "Số Căn cước",
-    "ngay_cap": "Ngày cấp",
-    "noi_cap": "Nơi cấp",
-    "noi_cu_tru": "Nơi cư trú",
-    "dien_thoai": "Điện thoại",
-    "so_tien_cho_vay_dong": "Số tiền cho vay (đồng)",
-    "thoi_gian_cho_vay_thang": "Thời gian cho vay (tháng)",
-    "han_tra_no_cuoi_cung": "Hạn trả nợ cuối cùng",
-    "muc_dich_su_dung_tien_vay": "Mục đích sử dụng tiền vay",
-    "ky_han_tra_no_goc_so_thang_ky": "Kỳ hạn trả nợ gốc (số tháng/kỳ)",
-    "so_tien_tra_no_goc_cho_moi_ky_han_dong": "Số tiền trả nợ gốc cho mỗi kỳ hạn (đồng)",
-    "ngay_bat_dau_tra_goc": "Ngày bắt đầu trả gốc",
-}
-
-convert_str_field = ["so_can_cuoc", "dien_thoai", "dien_thoai_ben_cho_vay"]
 
 # Output folder
 output_dir = "generated_docs"
@@ -65,21 +42,35 @@ def evaluate_placeholder(expr: str):
     return func_name, arg_name
 
 
-def generate_ky_han_tra_no_goc(start_date, end_date, amount):
+def generate_ky_han_tra_no_goc(start_date, total_duration_months, amount, cycle_months):
     start_date = datetime.strptime(start_date, "%d/%m/%Y")
-    end_date = datetime.strptime(end_date, "%d/%m/%Y")
 
-    # Create the list of yearly dates
-    dates = []
-    current = start_date
-    while current <= end_date:
-        dates.append(current)
-        current = current.replace(year=current.year + 1)
+    # Date list
+    date_list = []
+    elapsed_months = 0
+    while elapsed_months < total_duration_months - cycle_months:
+        new_date = start_date + relativedelta(months=elapsed_months)
+        date_list.append(new_date)
+        if elapsed_months + cycle_months >= total_duration_months - cycle_months:
+            new_date = new_date + relativedelta(
+                months=(total_duration_months - elapsed_months)
+            )
+            date_list.append(new_date)
+        elapsed_months += cycle_months
 
+    # Money list
+    cycle_count = total_duration_months // cycle_months
+    money_each_cycle = amount * cycle_months / total_duration_months
+    money_list = [money_each_cycle] * cycle_count
+    spare_money = amount - (money_each_cycle * cycle_count)
+    if spare_money > 0:
+        money_list.append(spare_money)
+
+    # Combine two lists to get result
     result_lines = []
 
-    for date in dates:
-        amount_str = f"{amount:,.0f}".replace(",", ".")  # Format number only
+    for index, date in enumerate(date_list):
+        amount_str = f"{(money_list[index]):,.0f}".replace(".", ",")
         result_lines.append(
             f"\t- Ngày {date.strftime('%d/%m/%Y')}, số tiền {amount_str} đồng."
         )
@@ -103,7 +94,7 @@ for index, row in df.iterrows():
 
             # Check if it's a number (int or float), format with digit grouping
             if isinstance(value, (int, float)) and "tiền" in col:
-                formatted_value = f"{value:,.0f}".replace(",", ".")
+                formatted_value = f"{value:,.0f}".replace(".", ",")
             else:
                 formatted_value = str(value)
 
@@ -116,18 +107,26 @@ for index, row in df.iterrows():
 
             paragraph.insert_paragraph_before(
                 generate_ky_han_tra_no_goc(
-                    row[column_mappings["ngay_bat_dau_tra_goc"]],
-                    row[column_mappings["han_tra_no_cuoi_cung"]],
-                    row[column_mappings["so_tien_tra_no_goc_cho_moi_ky_han_dong"]],
+                    amount=row[column_mappings["so_tien_cho_vay_dong"]],
+                    start_date=row[column_mappings["ngay_bat_dau_tra_goc"]],
+                    cycle_months=row[column_mappings["ky_han_tra_no_goc_so_thang_ky"]],
+                    total_duration_months=row[
+                        column_mappings["thoi_gian_cho_vay_thang"]
+                    ],
                 )
+                # generate_ky_han_tra_no_goc(
+                #     amount=100,
+                #     cycle_months=12,
+                #     start_date="22/05/2025",
+                #     total_duration_months=50,
+                # )
             )
 
             p.getparent().remove(p)
 
         for run in paragraph.runs:
             if f"{{current_date}}" in run.text:
-                run.text = run.text.replace(
-                    "{{current_date}}", str(current_date))
+                run.text = run.text.replace("{{current_date}}", str(current_date))
 
             # Replace function placeholders
             func_placeholders = re.findall(r"{{\s*\w+\(\w+\)\s*}}", run.text)
