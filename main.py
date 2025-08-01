@@ -79,7 +79,7 @@ def generate_ky_han_tra_no_goc(start_date, end_date, amount):
     result_lines = []
 
     for date in dates:
-        amount_str = f"{amount:,.0f}.replace(",", ".")"  # Format number only
+        amount_str = f"{amount:,.0f}".replace(",", ".")  # Format number only
         result_lines.append(
             f"\t- Ngày {date.strftime('%d/%m/%Y')}, số tiền {amount_str} đồng."
         )
@@ -103,7 +103,7 @@ for index, row in df.iterrows():
 
             # Check if it's a number (int or float), format with digit grouping
             if isinstance(value, (int, float)) and "tiền" in col:
-                formatted_value = f"{value:,.0f}.replace(",", ".")"
+                formatted_value = f"{value:,.0f}".replace(",", ".")
             else:
                 formatted_value = str(value)
 
