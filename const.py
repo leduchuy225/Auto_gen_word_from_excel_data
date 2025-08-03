@@ -1,8 +1,10 @@
 excel_sheet_name = "M07B"
 excel_file_name = "GQVL.xlsx"
-word_file_name = "Hop_dong_TD.docx"
+# word_file_name = "Hop_dong_TD.docx"
+word_file_name = "mau_03.docx"
 
 column_mappings = {
+    "to_truong": "Tổ Trưởng",
     "stt": "STT",
     "hop_dong_tin_dung_so": "Hợp đồng tín dụng số",
     "ten_ben_cho_vay": "Tên bên cho vay",
